@@ -3,179 +3,177 @@ import pandas as pd
 import os
 import glob
 from datetime import datetime
-import time
 
-st.set_page_config(page_title="Data Integrity Comparison Tool", layout="wide")
+def get_latest_file(path, pattern):
+    files = glob.glob(os.path.join(path, pattern))
+    return max(files, key=os.path.getmtime) if files else None
 
-st.title("Data Integrity Comparison Tool")
-st.markdown(
+def get_oldest_file(path, pattern):
+    files = glob.glob(os.path.join(path, pattern))
+    return min(files, key=os.path.getmtime) if files else None
+
+def find_discrepancies(row, current_data, key_cols):
     """
-    This tool compares two CSV files to check that nothing has changed.
-    Please provide the following:
-    1. Project File Directory (optional)
-    2. Data Directory (where your CSV files are stored)
-    3. Output Directory (where results will be saved)
-    4. Select key column(s) for matching rows.
+    Compare row values between 'previous_df' row and the matching row in 'current_df',
+    using the user-selected key columns to locate the matching row.
     """
-)
+    # Build a filter for the matching row in the current_data
+    filter_condition = None
+    for col in key_cols:
+        cond = current_data[col] == row[col]
+        filter_condition = cond if filter_condition is None else (filter_condition & cond)
+    
+    # Find the row in current_data
+    matching_rows = current_data[filter_condition]
+    if matching_rows.empty:
+        return "Row is missing from latest download"
+    
+    current_row = matching_rows.iloc[0]
+    
+    discrepancies = []
+    for col in row.index:
+        # Skip the key columns themselves when checking for differences
+        if col in key_cols:
+            continue
+        
+        old_val = row[col]
+        new_val = current_row.get(col, None)
+        
+        # Treat both NaN as identical
+        if pd.isna(old_val) and pd.isna(new_val):
+            continue
+        
+        if old_val != new_val:
+            discrepancies.append(f"{col}: {old_val} != {new_val}")
+    
+    return ", ".join(discrepancies) if discrepancies else ""
 
-# Input widgets
-project_dir = st.text_input("Project File Directory", value="\\\\your\\default\\project\\directory")
-data_dir = st.text_input("Data Directory", value="\\\\your\\default\\data\\directory")
-output_dir = st.text_input("Output Directory", value="\\\\your\\default\\output\\directory")
+# ----------------------------------------------------------------------------------------
+# Streamlit App
+# ----------------------------------------------------------------------------------------
+st.set_page_config(page_title="Data Integrity Comparison", layout="wide")
+st.title("Data Integrity Comparison Tool (No Summary / No Archive)")
 
-# Attempt to extract column names from the first CSV in data_dir
-columns = []
-if os.path.isdir(data_dir):
-    csv_files = glob.glob(os.path.join(data_dir, "*.csv"))
+st.markdown("""
+This version replicates your original data integrity logic while allowing you to:
+- Select any column(s) as the key
+- Compare the oldest vs newest CSV in the data directory
+- Generate **one CSV** of discrepancies (missing or new rows)
+
+**Note**: Steps 5 (summary stats) and 6 (archiving the old file) have been removed.
+""")
+
+# User inputs
+data_path = st.text_input("Data Directory", value=r"\\your\shared\drive\data")
+output_path = st.text_input("Output Directory", value=r"\\your\shared\drive\output")
+
+# Once the user enters a valid data directory, find at least one CSV to read columns from
+columns_available = []
+if os.path.isdir(data_path):
+    csv_files = glob.glob(os.path.join(data_path, "*.csv"))
     if csv_files:
         try:
+            # Read one CSV just to grab the column names
             sample_df = pd.read_csv(csv_files[0])
+            # Strip whitespace from columns, just like your original code
             sample_df.columns = sample_df.columns.str.strip()
-            columns = list(sample_df.columns)
+            columns_available = list(sample_df.columns)
         except Exception as e:
-            st.error(f"Error reading CSV: {e}")
+            st.error(f"Error reading sample CSV for column names: {e}")
     else:
-        st.warning("No CSV files found in the Data Directory.")
+        st.warning("No CSV files found in the specified Data Directory.")
 else:
-    st.info("Enter a valid Data Directory.")
+    st.info("Please enter a valid Data Directory.")
 
-# Let user select key columns if available
-key_columns = st.multiselect("Select Key Column(s) for Matching Rows", options=columns)
+# Let user select columns that form the key
+key_cols = st.multiselect("Select Key Column(s) for Matching Rows", options=columns_available)
 
-# Run button to start processing
-if st.button("Run"):
-    if not os.path.isdir(data_dir):
-        st.error("Data Directory does not exist.")
-    elif not os.path.isdir(output_dir):
-        st.error("Output Directory does not exist.")
-    elif not key_columns:
-        st.error("Select at least one key column.")
-    else:
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        try:
-            # Locate CSV files
-            status_text.info("Locating CSV files...")
-            csv_files = glob.glob(os.path.join(data_dir, "*.csv"))
-            if len(csv_files) < 2:
-                st.error("At least two CSV files are required.")
-                st.stop()
+run_button = st.button("Run Comparison")
 
-            previous_file_path = min(csv_files, key=os.path.getmtime)
-            current_file_path = max(csv_files, key=os.path.getmtime)
-            time.sleep(0.5)
-            progress_bar.progress(10)
-
-            # Read CSV files
-            status_text.info("Reading CSV files...")
-            previous_df = pd.read_csv(previous_file_path)
-            current_df = pd.read_csv(current_file_path)
-            previous_df.columns = previous_df.columns.str.strip()
-            current_df.columns = current_df.columns.str.strip()
-            time.sleep(0.5)
-            progress_bar.progress(20)
-
-            # Identify rows not matching based on key columns
-            status_text.info("Comparing data...")
-            rows_not_matching_df = previous_df.merge(
-                current_df,
-                on=key_columns,
-                how='left',
-                indicator=True
-            ).loc[lambda x: x['_merge'] == 'left_only'].drop(columns=['_merge'])
-            time.sleep(0.5)
-            progress_bar.progress(30)
-
-            def find_discrepancies(row, current_data, key_columns):
-                filter_condition = None
-                for col in key_columns:
-                    cond = current_data[col] == row[col]
-                    filter_condition = cond if filter_condition is None else filter_condition & cond
-                current_row = current_data[filter_condition]
-                if current_row.empty:
-                    return "Row missing in latest download"
-                current_row = current_row.iloc[0]
-                discrepancies = []
-                for col in row.index:
-                    if col in key_columns:
-                        continue
-                    if pd.isna(row[col]) and pd.isna(current_row[col]):
-                        continue
-                    if row[col] != current_row[col]:
-                        discrepancies.append(f"{col}: {row[col]} != {current_row[col]}")
-                return ", ".join(discrepancies) if discrepancies else "No discrepancy"
-
-            current_date = datetime.now().strftime("%m/%d/%Y")
-            rows_not_matching_df = rows_not_matching_df.apply(
-                lambda row: pd.Series({
-                    **row,
-                    'Discrepancy_Columns': find_discrepancies(row, current_df, key_columns),
-                    'Created_Date': current_date
-                }), axis=1
-            )
-            time.sleep(0.5)
-            progress_bar.progress(50)
-
-            # Identify new rows in current data
-            status_text.info("Checking for new rows...")
-            merged_df = current_df.merge(previous_df, on=key_columns, how='outer', indicator=True)
-            new_rows_df = merged_df.loc[merged_df['_merge'] == 'left_only'].drop(columns=['_merge'])
-            new_rows_df['Discrepancy_Columns'] = 'New row in current download'
-            new_rows_df['Created_Date'] = current_date
-            time.sleep(0.5)
-            progress_bar.progress(60)
-
-            # Combine discrepancy reports
-            status_text.info("Combining results...")
-            combined_discrepancies_df = pd.concat([rows_not_matching_df, new_rows_df], ignore_index=True)
-            time.sleep(0.5)
-            progress_bar.progress(70)
-
-            dt_tm = datetime.now().strftime("%Y%m%d_%H%M%S")
-            non_matching_dir = os.path.join(output_dir, "Non_Matching_Records")
-            summary_dir = os.path.join(output_dir, "Percentage_Change_Results")
-            os.makedirs(non_matching_dir, exist_ok=True)
-            os.makedirs(summary_dir, exist_ok=True)
-            output_file_path = os.path.join(non_matching_dir, f"Rows_Not_Matching_{dt_tm}.csv")
-            combined_discrepancies_df.to_csv(output_file_path, index=False)
-
-            # Create summary statistics
-            total_rows_missing = len(rows_not_matching_df)
-            total_rows_new = len(new_rows_df)
-            total_discrepancies = total_rows_missing + total_rows_new
-            total_rows_previous = len(previous_df)
-            total_rows_current = len(current_df)
-            percentage_change = (total_discrepancies / total_rows_previous) * 100 if total_rows_previous > 0 else 0
-
-            result_df = pd.DataFrame({
-                'Oral_Onc_Previous': [total_rows_previous],
-                'Oral_Onc_Current': [total_rows_current],
-                'Non_Matching_Rows': [total_discrepancies],
-                'Percentage_Change': [f"{percentage_change:.2f}%"],
-                'Timestamp': [current_date],
-                'Missing_Rows': [total_rows_missing],
-                'New_Rows': [total_rows_new]
-            })
-
-            results_file_path = os.path.join(summary_dir, f"Oral_Onc_Results_{dt_tm}.csv")
-            result_df.to_csv(results_file_path, index=False)
-            time.sleep(0.5)
-            progress_bar.progress(90)
-
-            # Archive the previous file
-            status_text.info("Archiving previous file...")
-            archive_path = os.path.join(data_dir, "Archive")
-            os.makedirs(archive_path, exist_ok=True)
-            os.rename(previous_file_path, os.path.join(archive_path, os.path.basename(previous_file_path)))
-            time.sleep(0.5)
-            progress_bar.progress(100)
-
-            st.success("Data comparison complete!")
-            st.write(f"Discrepancy report saved to: **{output_file_path}**")
-            st.write(f"Summary results saved to: **{results_file_path}**")
-
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
-        finally:
-            status_text.empty()
+if run_button:
+    # Basic validations
+    if not os.path.isdir(data_path):
+        st.error("Data Directory is invalid or does not exist.")
+        st.stop()
+    if not os.path.isdir(output_path):
+        st.error("Output Directory is invalid or does not exist.")
+        st.stop()
+    if len(key_cols) == 0:
+        st.error("Please select at least one key column.")
+        st.stop()
+    
+    try:
+        st.write("Locating oldest and newest CSV files in data directory...")
+        previous_file_path = get_oldest_file(data_path, "*.csv")
+        current_file_path = get_latest_file(data_path, "*.csv")
+        
+        if not previous_file_path or not current_file_path:
+            st.error("Could not find two or more CSV files in the data directory.")
+            st.stop()
+        if previous_file_path == current_file_path:
+            st.error("Only one CSV file found; need at least two for comparison.")
+            st.stop()
+        
+        st.write(f"Previous (oldest): {os.path.basename(previous_file_path)}")
+        st.write(f"Current (newest): {os.path.basename(current_file_path)}")
+        
+        # Read CSVs
+        previous_df = pd.read_csv(previous_file_path)
+        current_df = pd.read_csv(current_file_path)
+        
+        # Strip column names
+        previous_df.columns = previous_df.columns.str.strip()
+        current_df.columns = current_df.columns.str.strip()
+        
+        # 1. Find rows in previous data that are missing in current
+        rows_not_matching_df = previous_df.merge(
+            current_df, 
+            on=key_cols, 
+            how='left', 
+            indicator=True
+        ).loc[lambda x: x['_merge'] == 'left_only'].drop(columns=['_merge'])
+        
+        # For each row, determine which columns differ (or if it's missing entirely)
+        current_date = datetime.now().strftime("%m/%d/%Y")
+        rows_not_matching_df = rows_not_matching_df.apply(
+            lambda row: pd.Series({
+                **row,
+                'Discrepancy_Columns': find_discrepancies(row, current_df, key_cols),
+                'Created_Date': current_date
+            }),
+            axis=1
+        )
+        
+        # 2. Find new rows in current data that didn't exist in previous
+        merged_df = current_df.merge(previous_df, on=key_cols, how='outer', indicator=True)
+        
+        # Build a composite key string for the "missing" set
+        def make_key_str(row, key_cols):
+            return "||".join(str(row[col]) for col in key_cols)
+        
+        missing_keys_set = set(rows_not_matching_df.apply(lambda r: make_key_str(r, key_cols), axis=1))
+        
+        new_rows_df = merged_df[merged_df['_merge'] == 'left_only'].drop(columns=['_merge']).copy()
+        new_rows_df_key_str = new_rows_df.apply(lambda r: make_key_str(r, key_cols), axis=1)
+        new_rows_df = new_rows_df[~new_rows_df_key_str.isin(missing_keys_set)]
+        
+        new_rows_df['Discrepancy_Columns'] = 'New row in current download'
+        new_rows_df['Created_Date'] = current_date
+        
+        # 3. Combine missing/changed rows + new rows
+        combined_discrepancies_df = pd.concat([rows_not_matching_df, new_rows_df], ignore_index=True)
+        
+        # 4. Save the combined discrepancy CSV
+        dt_tm = datetime.now().strftime("%Y%m%d_%H%M%S")
+        non_matching_dir = os.path.join(output_path, "Non_Matching_Records")
+        os.makedirs(non_matching_dir, exist_ok=True)
+        discrepancy_file = os.path.join(non_matching_dir, f"Rows_Not_Matching_{dt_tm}.csv")
+        combined_discrepancies_df.to_csv(discrepancy_file, index=False)
+        
+        # No summary stats or archiving steps (Steps 5 & 6) in this version
+        
+        st.success("Comparison complete!")
+        st.write(f"**Discrepancy report**: {discrepancy_file}")
+    
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
