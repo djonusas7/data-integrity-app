@@ -13,20 +13,10 @@ def get_oldest_file(path, pattern):
     return min(files, key=os.path.getmtime) if files else None
 
 def find_discrepancies(row, current_data, key_cols):
-    """
-    Matches the logic of your original function.
-    1. Find the row in 'current_data' by the user-selected key columns.
-    2. If not found, "Row is missing from latest download".
-    3. If found, compare each column to see which ones differ.
-    """
-    # Build a filter for the current_df row using the chosen key columns
     filter_condition = None
     for col in key_cols:
         cond = current_data[col] == row[col]
-        if filter_condition is None:
-            filter_condition = cond
-        else:
-            filter_condition &= cond
+        filter_condition = cond if filter_condition is None else (filter_condition & cond)
     
     matching_rows = current_data[filter_condition]
     if matching_rows.empty:
@@ -36,9 +26,9 @@ def find_discrepancies(row, current_data, key_cols):
     
     discrepancies = []
     for col in row.index:
-        # If both are NaN, treat them as the same
         old_val = row[col]
         new_val = current_row.get(col, None)
+        # Treat both NaN as identical
         if pd.isna(old_val) and pd.isna(new_val):
             continue
         if old_val != new_val:
@@ -46,20 +36,22 @@ def find_discrepancies(row, current_data, key_cols):
     
     return ", ".join(discrepancies)
 
+def make_key_str(row, key_cols):
+    """
+    Creates a string that uniquely identifies a row based on the chosen key columns.
+    Example: if key_cols = ['FIN / ECD', 'Order ID'], the key might be '12345||67890'.
+    """
+    return "||".join(str(row[col]) for col in key_cols)
+
 # ----------------------------------------------------------------------------------------
 # Streamlit App
 # ----------------------------------------------------------------------------------------
 st.set_page_config(page_title="Data Integrity Comparison", layout="wide")
-st.title("Data Integrity Comparison Tool (Partial Changes Detected)")
+st.title("Data Integrity Comparison Tool")
 
 st.markdown("""
-This version **replicates the original script's behavior** of merging on **all shared columns** to detect any row-level differences.  
-Then it uses your **selected key columns** to figure out if a row is truly missing or if certain columns changed.
-  
-1. Provide a **Data Directory** with your CSVs. The script picks the **oldest** (previous) and **newest** (current).  
-2. Provide an **Output Directory** for the discrepancy CSV.  
-3. Select **one or more Key Columns** that identify a row (e.g., `CMRN / EMPI`, `FIN / ECD`, `Order ID`), as in your original code.  
-4. **Click Run** to compare. Partial differences in non‐key columns will appear as discrepancies again.
+This version ensures that rows already flagged as missing/changed
+will **not** also be flagged as 'New row in current download.'
 """)
 
 # User inputs for directories
@@ -121,26 +113,19 @@ if run_button:
         current_df.columns = current_df.columns.str.strip()
         
         # ----------------------------------------------------------------
-        # 1) Find rows that do not match EXACTLY in all shared columns.
-        #    Like your original code, we do NOT specify 'on=...', so 
-        #    Pandas merges on all columns in common. If any differ, it's left_only.
+        # 1) Use your original approach: Merge on ALL shared columns to detect partial mismatches.
+        #    Rows in previous_df that differ in any column become left_only.
         # ----------------------------------------------------------------
         st.write("Merging on ALL columns to detect partial mismatches...")
-        merged_all_cols = previous_df.merge(
-            current_df,
-            how='left',
-            indicator=True
-        )
-        # Rows from previous that have no exact match in current (any difference triggers mismatch)
+        merged_all_cols = previous_df.merge(current_df, how='left', indicator=True)
         rows_not_matching_df = merged_all_cols.loc[merged_all_cols['_merge'] == 'left_only'].drop(columns=['_merge'])
         
         # ----------------------------------------------------------------
-        # 2) For each row in 'rows_not_matching_df', find if there's a row
-        #    in the current_df that shares the same 'key_cols' but has changed data.
+        # 2) For each mismatched row, see if there's a row with the same key in current_df
+        #    - If not, "Row is missing"
+        #    - If yes, note the discrepancies in non-key columns
         # ----------------------------------------------------------------
         current_date = datetime.now().strftime("%m/%d/%Y")
-        
-        # Apply the discrepancy check
         rows_not_matching_df = rows_not_matching_df.apply(
             lambda row: pd.Series({
                 **row,
@@ -151,12 +136,23 @@ if run_button:
         )
         
         # ----------------------------------------------------------------
-        # 3) Find new rows in the current data that have no exact match in previous
-        #    (like your original code's "new rows" step).
+        # 3) Identify new rows in current_df
+        #    - Also exclude rows that match keys of already-flagged discrepancies
         # ----------------------------------------------------------------
         st.write("Checking for NEW rows in current that didn't match exactly in previous...")
         merged_for_new = current_df.merge(previous_df, how='outer', indicator=True)
-        new_rows_df = merged_for_new.loc[merged_for_new['_merge'] == 'left_only'].drop(columns=['_merge'])
+        
+        # Basic "new row" check
+        new_rows_df = merged_for_new.loc[merged_for_new['_merge'] == 'left_only'].drop(columns=['_merge']).copy()
+        
+        # Build a set of keys that were flagged as discrepancies in 'rows_not_matching_df'
+        missing_keys_set = set(rows_not_matching_df.apply(lambda r: make_key_str(r, key_cols), axis=1))
+        
+        # Build a composite key for each "new" row
+        new_rows_df_key_str = new_rows_df.apply(lambda r: make_key_str(r, key_cols), axis=1)
+        
+        # Exclude new rows that have the same key as something in rows_not_matching_df
+        new_rows_df = new_rows_df[~new_rows_df_key_str.isin(missing_keys_set)]
         
         # Mark them as "New row in current download"
         new_rows_df['Discrepancy_Columns'] = 'New row in current download'
