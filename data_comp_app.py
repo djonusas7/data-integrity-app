@@ -3,6 +3,10 @@ import pandas as pd
 import os
 import glob
 from datetime import datetime
+import subprocess
+import sys
+import time
+import webbrowser
 
 def get_latest_file(path, pattern):
     files = glob.glob(os.path.join(path, pattern))
@@ -142,3 +146,9 @@ if run_button:
     
     except Exception as e:
         st.error(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    streamlit_process = subprocess.Popen([sys.executable, "-m", "streamlit", "run", sys.argv[0]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    time.sleep(3)
+    webbrowser.open("http://localhost:8501")
+    streamlit_process.wait()
