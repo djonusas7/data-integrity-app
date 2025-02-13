@@ -149,16 +149,35 @@ if run_button:
 
 if __name__ == "__main__":
     try:
-        if getattr(sys, 'frozen', False):
-            script_path = os.path.join(sys._MEIPASS, "data_comp_app.py")
-        else:
-            script_path = os.path.abspath(__file__)
+        log_file_path = os.path.join(os.path.dirname(__file__), "streamlit_debug_log.txt")
 
-        process = subprocess.Popen(["streamlit", "run", script_path, "--server.port=8501", "--server.headless=true"],
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        time.sleep(5)
-        webbrowser.open("http://localhost:8501")
-        process.wait()
+        with open(log_file_path, "w") as log_file:
+            log_file.write("Checking execution environment...\n")
+
+            # Check if running as a PyInstaller EXE
+            if getattr(sys, 'frozen', False):
+                script_path = os.path.join(sys._MEIPASS, "data_comp_app.py")
+                log_file.write(f"Running as EXE, script path: {script_path}\n")
+            else:
+                script_path = os.path.abspath(__file__)
+                log_file.write(f"Running as script, script path: {script_path}\n")
+
+            # Log Python version
+            log_file.write(f"Python Executable: {sys.executable}\n")
+
+            # Run Streamlit and redirect output to the log file
+            process = subprocess.Popen(
+                ["streamlit", "run", script_path, "--server.port=8501", "--server.headless=true"],
+                stdout=log_file, stderr=log_file, shell=True
+            )
+
+            time.sleep(5)
+            log_file.write("Attempting to open browser at http://localhost:8501...\n")
+            webbrowser.open("http://localhost:8501")
+
+            process.wait()
+
     except Exception as e:
-        with open("streamlit_error_log.txt", "w") as log_file:
-            log_file.write(str(e))
+        with open(log_file_path, "a") as log_file:
+            log_file.write(f"\n[Exception]: {str(e)}\n")
+
