@@ -148,22 +148,12 @@ if run_button:
         st.error(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    script_name = "data_comp_app.py"  # Make sure this is the actual script name
-
+    script_name = "data_comp_app.py"
     try:
-        # Start Streamlit as a separate process
         process = subprocess.Popen(["streamlit", "run", script_name], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-        # Wait a few seconds before opening the browser
         time.sleep(5)
         webbrowser.open("http://localhost:8501")
-
-        # Keep the process running
         process.wait()
-
     except Exception as e:
         with open("streamlit_error_log.txt", "w") as log_file:
             log_file.write(str(e))
-
-
-
