@@ -148,9 +148,14 @@ if run_button:
         st.error(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    script_name = "data_comp_app.py"
     try:
-        process = subprocess.Popen(["streamlit", "run", script_name], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if getattr(sys, 'frozen', False):
+            script_path = os.path.join(sys._MEIPASS, "data_comp_app.py")
+        else:
+            script_path = os.path.abspath(__file__)
+
+        process = subprocess.Popen(["streamlit", "run", script_path, "--server.port=8501", "--server.headless=true"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         time.sleep(5)
         webbrowser.open("http://localhost:8501")
         process.wait()
