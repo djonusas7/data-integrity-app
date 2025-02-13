@@ -148,7 +148,15 @@ if run_button:
         st.error(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    streamlit_process = subprocess.Popen([sys.executable, "-m", "streamlit", "run", sys.argv[0]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    script_path = os.path.abspath(sys.argv[0])
+    
+    # Use subprocess to launch Streamlit correctly
+    process = subprocess.Popen(f"streamlit run {script_path}", shell=True)
+
+    # Wait for a few seconds before opening browser
     time.sleep(3)
     webbrowser.open("http://localhost:8501")
-    streamlit_process.wait()
+
+    # Keep the process running
+    process.wait()
+
