@@ -32,7 +32,6 @@ def find_discrepancies(row, current_data, key_cols):
     for col in row.index:
         old_val = row[col]
         new_val = current_row.get(col, None)
-        # Treat both NaN as identical
         if pd.isna(old_val) and pd.isna(new_val):
             continue
         if old_val != new_val:
@@ -43,9 +42,6 @@ def find_discrepancies(row, current_data, key_cols):
 def make_key_str(row, key_cols):
     return "||".join(str(row[col]) for col in key_cols)
 
-# ----------------------------------------------------------------------------------------
-# Streamlit App
-# ----------------------------------------------------------------------------------------
 st.set_page_config(page_title="Data Integrity Comparison", layout="wide")
 st.title("Data Integrity Comparison Tool")
 
@@ -54,12 +50,10 @@ This application compares two datasets to detect discrepancies and ensure data i
 Upload or specify the paths for the latest and previous versions of your dataset, and the tool will identify any missing, changed, or newly added rows.
 """)
 
-# User inputs for directories
 data_path = st.text_input("Data Directory", value=r"\\your\shared\drive\data")
 output_path = st.text_input("Output Directory", value=r"\\your\shared\drive\output")
 
 columns_available = []
-# If the data_path is valid, try to read at least one CSV to gather columns
 if os.path.isdir(data_path):
     csv_files = glob.glob(os.path.join(data_path, "*.csv"))
     if csv_files:
@@ -75,7 +69,6 @@ else:
     st.info("Enter a valid Data Directory.")
 
 key_cols = st.multiselect("Select the Key Column(s) for Row Identification", options=columns_available)
-
 run_button = st.button("Run Comparison")
 
 if run_button:
@@ -104,17 +97,14 @@ if run_button:
         st.write(f"Previous (oldest): {os.path.basename(previous_file_path)}")
         st.write(f"Current (newest): {os.path.basename(current_file_path)}")
         
-        # Read the CSV files
         previous_df = pd.read_csv(previous_file_path)
         current_df = pd.read_csv(current_file_path)
         
-        # Strip column names
         previous_df.columns = previous_df.columns.str.strip()
         current_df.columns = current_df.columns.str.strip()
         
         progress_bar = st.progress(0)
         
-        # Merge on ALL shared columns to detect partial mismatches.
         progress_bar.progress(20)
         merged_all_cols = previous_df.merge(current_df, how='left', indicator=True)
         rows_not_matching_df = merged_all_cols.loc[merged_all_cols['_merge'] == 'left_only'].drop(columns=['_merge'])
@@ -149,35 +139,20 @@ if run_button:
 
 if __name__ == "__main__":
     try:
-        log_file_path = os.path.join(os.path.dirname(__file__), "streamlit_debug_log.txt")
+        if getattr(sys, 'frozen', False):
+            script_path = os.path.join(sys._MEIPASS, "data_comp_app.py")
+        else:
+            script_path = os.path.abspath(__file__)
 
-        with open(log_file_path, "w") as log_file:
-            log_file.write("Checking execution environment...\n")
+        process = subprocess.Popen(["streamlit", "run", script_path, "--server.port=8501", "--server.headless=true"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        time.sleep(5)
 
-            # Check if running as a PyInstaller EXE
-            if getattr(sys, 'frozen', False):
-                script_path = os.path.join(sys._MEIPASS, "data_comp_app.py")
-                log_file.write(f"Running as EXE, script path: {script_path}\n")
-            else:
-                script_path = os.path.abspath(__file__)
-                log_file.write(f"Running as script, script path: {script_path}\n")
-
-            # Log Python version
-            log_file.write(f"Python Executable: {sys.executable}\n")
-
-            # Run Streamlit and redirect output to the log file
-            process = subprocess.Popen(
-                ["streamlit", "run", script_path, "--server.port=8501", "--server.headless=true"],
-                stdout=log_file, stderr=log_file, shell=True
-            )
-
-            time.sleep(5)
-            log_file.write("Attempting to open browser at http://localhost:8501...\n")
+        if not os.environ.get("BROWSER_OPENED"):
             webbrowser.open("http://localhost:8501")
-
-            process.wait()
-
+            os.environ["BROWSER_OPENED"] = "1"
+        
+        process.wait()
     except Exception as e:
-        with open(log_file_path, "a") as log_file:
-            log_file.write(f"\n[Exception]: {str(e)}\n")
-
+        with open("streamlit_error_log.txt", "w") as log_file:
+            log_file.write(str(e))
