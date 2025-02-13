@@ -148,7 +148,7 @@ if __name__ == "__main__":
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         time.sleep(5)
 
-        if not os.environ.get("BROWSER_OPENED"):
+        if "BROWSER_OPENED" not in os.environ:
             webbrowser.open("http://localhost:8501")
             os.environ["BROWSER_OPENED"] = "1"
         
