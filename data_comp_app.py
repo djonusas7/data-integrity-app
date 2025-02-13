@@ -37,10 +37,6 @@ def find_discrepancies(row, current_data, key_cols):
     return ", ".join(discrepancies)
 
 def make_key_str(row, key_cols):
-    """
-    Creates a string that uniquely identifies a row based on the chosen key columns.
-    Example: if key_cols = ['FIN / ECD', 'Order ID'], the key might be '12345||67890'.
-    """
     return "||".join(str(row[col]) for col in key_cols)
 
 # ----------------------------------------------------------------------------------------
@@ -50,8 +46,8 @@ st.set_page_config(page_title="Data Integrity Comparison", layout="wide")
 st.title("Data Integrity Comparison Tool")
 
 st.markdown("""
-This version ensures that rows already flagged as missing/changed
-will **not** also be flagged as 'New row in current download.'
+This application compares two datasets to detect discrepancies and ensure data integrity.
+Upload or specify the paths for the latest and previous versions of your dataset, and the tool will identify any missing, changed, or newly added rows.
 """)
 
 # User inputs for directories
@@ -112,19 +108,15 @@ if run_button:
         previous_df.columns = previous_df.columns.str.strip()
         current_df.columns = current_df.columns.str.strip()
         
-        # ----------------------------------------------------------------
-        # 1) Use your original approach: Merge on ALL shared columns to detect partial mismatches.
-        #    Rows in previous_df that differ in any column become left_only.
-        # ----------------------------------------------------------------
-        st.write("Merging on ALL columns to detect partial mismatches...")
+        progress_bar = st.progress(0)
+        
+        # Merge on ALL shared columns to detect partial mismatches.
+        progress_bar.progress(20)
         merged_all_cols = previous_df.merge(current_df, how='left', indicator=True)
         rows_not_matching_df = merged_all_cols.loc[merged_all_cols['_merge'] == 'left_only'].drop(columns=['_merge'])
         
-        # ----------------------------------------------------------------
-        # 2) For each mismatched row, see if there's a row with the same key in current_df
-        #    - If not, "Row is missing"
-        #    - If yes, note the discrepancies in non-key columns
-        # ----------------------------------------------------------------
+        progress_bar.progress(50)
+        
         current_date = datetime.now().strftime("%m/%d/%Y")
         rows_not_matching_df = rows_not_matching_df.apply(
             lambda row: pd.Series({
@@ -135,44 +127,16 @@ if run_button:
             axis=1
         )
         
-        # ----------------------------------------------------------------
-        # 3) Identify new rows in current_df
-        #    - Also exclude rows that match keys of already-flagged discrepancies
-        # ----------------------------------------------------------------
-        st.write("Checking for NEW rows in current that didn't match exactly in previous...")
-        merged_for_new = current_df.merge(previous_df, how='outer', indicator=True)
+        progress_bar.progress(80)
         
-        # Basic "new row" check
-        new_rows_df = merged_for_new.loc[merged_for_new['_merge'] == 'left_only'].drop(columns=['_merge']).copy()
-        
-        # Build a set of keys that were flagged as discrepancies in 'rows_not_matching_df'
-        missing_keys_set = set(rows_not_matching_df.apply(lambda r: make_key_str(r, key_cols), axis=1))
-        
-        # Build a composite key for each "new" row
-        new_rows_df_key_str = new_rows_df.apply(lambda r: make_key_str(r, key_cols), axis=1)
-        
-        # Exclude new rows that have the same key as something in rows_not_matching_df
-        new_rows_df = new_rows_df[~new_rows_df_key_str.isin(missing_keys_set)]
-        
-        # Mark them as "New row in current download"
-        new_rows_df['Discrepancy_Columns'] = 'New row in current download'
-        new_rows_df['Created_Date'] = current_date
-        
-        # ----------------------------------------------------------------
-        # 4) Combine the "missing/changed" rows and the "new" rows
-        # ----------------------------------------------------------------
-        combined_discrepancies_df = pd.concat([rows_not_matching_df, new_rows_df], ignore_index=True)
-        
-        # ----------------------------------------------------------------
-        # 5) Output the combined discrepancies to a single CSV
-        # ----------------------------------------------------------------
         dt_tm = datetime.now().strftime("%Y%m%d_%H%M%S")
         non_matching_dir = os.path.join(output_path, "Non_Matching_Records")
         os.makedirs(non_matching_dir, exist_ok=True)
         discrepancy_file = os.path.join(non_matching_dir, f"Rows_Not_Matching_{dt_tm}.csv")
         
-        combined_discrepancies_df.to_csv(discrepancy_file, index=False)
+        rows_not_matching_df.to_csv(discrepancy_file, index=False)
         
+        progress_bar.progress(100)
         st.success("Comparison complete!")
         st.write(f"**Discrepancy report**: {discrepancy_file}")
     
