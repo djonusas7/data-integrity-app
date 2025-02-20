@@ -5,12 +5,12 @@ from datetime import datetime
 # --------------------------------------------------------------------
 # Set page configuration (must be first)
 # --------------------------------------------------------------------
-st.set_page_config(page_title="Data Integrity Comparison", layout="wide")
+st.set_page_config(page_title="Data Integrity Comparison and Validation", layout="wide")
 
 # --------------------------------------------------------------------
 # App Title and Description
 # --------------------------------------------------------------------
-st.title("Data Integrity Comparison Tool")
+st.title("Data Integrity Comparison and Validation Tool")
 st.markdown("""
 This application compares two datasets to detect discrepancies and ensure data integrity.
 Please drag and drop your **Previous CSV file** and **Current CSV file** below.
