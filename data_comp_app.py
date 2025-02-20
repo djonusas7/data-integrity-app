@@ -7,6 +7,11 @@ from PIL import Image
 import base64
 import io
 
+# --------------------------------------------------------------------
+# Set page configuration as the very first Streamlit command
+# --------------------------------------------------------------------
+st.set_page_config(page_title="Data Integrity Comparison", layout="wide")
+
 # -----------------------------------------------------------------------------
 # Helper Functions
 # -----------------------------------------------------------------------------
@@ -51,8 +56,7 @@ def make_key_str(row, key_cols):
 # -----------------------------------------------------------------------------
 # Add Logo to the Top Right Corner (using a relative path)
 # -----------------------------------------------------------------------------
-# Construct the relative path to the logo. Since this file is in the "scripts" folder,
-# we move one directory up and then into the "assets" folder.
+# Since this file is in the "scripts" folder, we construct the path relative to it.
 logo_path = os.path.join(os.path.dirname(__file__), "..", "assets", "MCI Logo.jpg")
 try:
     logo = Image.open(logo_path)
@@ -76,9 +80,8 @@ except Exception as e:
     st.error(f"Error loading logo: {e}")
 
 # -----------------------------------------------------------------------------
-# Streamlit App Setup
+# Streamlit App Setup and User Interface
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Data Integrity Comparison", layout="wide")
 st.title("Data Integrity Comparison Tool")
 
 st.markdown("""
